@@ -1,0 +1,140 @@
+clear all; close all; clc;
+
+%% CONFIGURACIÓN - CARPETA TRAIN
+ruta_base = 'C:\Users\epasc\OneDrive\Desktop\Documents\Eddy\Maestría\Procesamiento Digital de Imagenes';
+carpeta_train = fullfile(ruta_base, 'train\');
+carpeta_imagenes = fullfile(carpeta_train, 'images\');
+
+% Verificar existencia
+if ~exist(carpeta_imagenes, 'dir')
+    error('No se encuentra la carpeta train/images/. Verifica la ruta.');
+end
+
+% Obtener lista de imágenes
+archivos = dir(fullfile(carpeta_imagenes, '*.jpg'));
+num_imagenes = length(archivos);
+fprintf('Procesando carpeta TRAIN: %d imágenes encontradas\n', num_imagenes);
+
+%% CREAR CARPETAS PARA CADA TÉCNICA DE MEJORA
+carpetas_metodos = {
+    'ecualizacion\';
+    'clahe\';
+    'highboost\';
+    'gradiente_laplaciano\';
+    'filtro_adaptativo_local\';
+    'adaptive_median\'};
+
+for i = 1:length(carpetas_metodos)
+    carpeta_metodo = fullfile(carpeta_train, carpetas_metodos{i});
+    if ~exist(carpeta_metodo, 'dir')
+        mkdir(carpeta_metodo);
+        fprintf('  Carpeta creada: %s\n', carpetas_metodos{i});
+    end
+end
+
+%% PARÁMETROS DE LAS TÉCNICAS
+
+% CLAHE
+clipLimit_clahe = 0.02;
+tileSize_clahe = [8 8];
+
+% Highboost
+factor_highboost = 1.5;
+tam_filtro_promedio = 3;
+
+% --- Parámetros para los filtros adaptativos (con ruido) ---
+% Ruido para filtro adaptativo local (Gaussiano)
+tipo_ruido_adapt_local = 'gaussian';   
+var_ruido_gauss_norm = 0.01;           % varianza en rango [0,1] (para imnoise)
+% La varianza real en escala 0-255 es: var_real = var_norm * (255^2)
+varianza_ruido_real = var_ruido_gauss_norm * (255^2);  % aprox. 650 para 0.01
+
+% Ruido para filtro adaptativo de mediana (sal y pimienta)
+densidad_ruido_sp = 0.05;               % densidad de ruido (0..1)
+
+% Filtro adaptativo local: tamaño de vecindad
+tam_ventana_adapt = 3;
+
+% Adaptive median: tamaños de ventana
+tam_inicial_mediana = 3;
+tam_maximo_mediana = 7;
+
+%% PROCESAR CADA IMAGEN
+for idx = 1:num_imagenes
+    % Cargar imagen original
+    nombre_archivo = archivos(idx).name;
+    ruta_completa = fullfile(carpeta_imagenes, nombre_archivo);
+    img_color = imread(ruta_completa);
+    
+    % Convertir a grises (todas las técnicas trabajan en escala de grises)
+    if size(img_color, 3) == 3
+        img_gris = rgb2gray(img_color);
+    else
+        img_gris = img_color;
+    end
+    % img_gris es uint8
+    
+    nombre_base = nombre_archivo(1:end-4);  % sin extensión
+    
+    % -------------------------------------------------------------
+    % 1. ECUALIZACIÓN DEL HISTOGRAMA 
+    % -------------------------------------------------------------
+    img_eq = ecualizacion_histograma(img_gris);
+    imwrite(img_eq, fullfile(carpeta_train, 'ecualizacion\', [nombre_base '_eq.jpg']));
+    
+    % -------------------------------------------------------------
+    % 2. CLAHE 
+    % -------------------------------------------------------------
+    img_clahe = clahe(img_gris, clipLimit_clahe, tileSize_clahe);
+    imwrite(img_clahe, fullfile(carpeta_train, 'clahe\', [nombre_base '_clahe.jpg']));
+    
+    % -------------------------------------------------------------
+    % 3. HIGHBOOST 
+    % -------------------------------------------------------------
+    img_high = highboost(img_gris, factor_highboost, tam_filtro_promedio);
+    imwrite(img_high, fullfile(carpeta_train, 'highboost\', [nombre_base '_high.jpg']));
+    
+    % -------------------------------------------------------------
+    % 4. GRADIENTE-LAPLACIANO
+    % -------------------------------------------------------------
+    img_lap = gradiente_laplaciano(img_gris);
+    imwrite(img_lap, fullfile(carpeta_train, 'gradiente_laplaciano\', [nombre_base '_lap.jpg']));
+    
+    % -------------------------------------------------------------
+    % 5. FILTRADO ADAPTATIVO LOCAL 
+    % -------------------------------------------------------------
+    % Añadir ruido gaussiano a la imagen original
+    img_ruido_gauss = imnoise(img_gris, 'gaussian', 0, var_ruido_gauss_norm);
+    % Aplicar filtro adaptativo local (ec. 5-32)
+    img_adapt = filtro_adaptativo_local(img_ruido_gauss, varianza_ruido_real, tam_ventana_adapt);
+    imwrite(img_adapt, fullfile(carpeta_train, 'filtro_adaptativo_local\', [nombre_base '_adapt.jpg']));
+    
+    % -------------------------------------------------------------
+    % 6. ADAPTIVE MEDIAN FILTER (sobre imagen con ruido sal y pimienta)
+    % -------------------------------------------------------------
+    % Añadir ruido sal y pimienta
+    img_ruido_sp = imnoise(img_gris, 'salt & pepper', densidad_ruido_sp);
+    % Aplicar filtro adaptativo de mediana
+    img_med = adaptive_median_filter(img_ruido_sp, tam_inicial_mediana, tam_maximo_mediana);
+    imwrite(img_med, fullfile(carpeta_train, 'adaptive_median\', [nombre_base '_amed.jpg']));
+    
+    % Mostrar progreso cada 50 imágenes
+    if mod(idx, 50) == 0
+        fprintf('  Procesadas %d/%d imágenes\n', idx, num_imagenes);
+    end
+end
+
+%% ESTADÍSTICAS FINALES
+fprintf('\n=== PROCESAMIENTO COMPLETADO ===\n');
+fprintf('Carpeta procesada: train/\n');
+fprintf('Imágenes originales: %d\n', num_imagenes);
+fprintf('Carpetas generadas:\n');
+
+total_imagenes = 0;
+for i = 1:length(carpetas_metodos)
+    carpeta_metodo = fullfile(carpeta_train, carpetas_metodos{i});
+    archivos_gen = dir(fullfile(carpeta_metodo, '*.jpg'));
+    fprintf('  • %-25s: %d imágenes\n', carpetas_metodos{i}(1:end-1), length(archivos_gen));
+    total_imagenes = total_imagenes + length(archivos_gen);
+end
+fprintf('\nTotal imágenes generadas: %d\n', total_imagenes);

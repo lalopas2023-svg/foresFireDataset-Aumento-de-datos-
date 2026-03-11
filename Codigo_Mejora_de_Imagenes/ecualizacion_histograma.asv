@@ -1,0 +1,40 @@
+function img_eq = ecualizacion_histograma(imagen)
+    
+    % Obtener dimensiones
+    [M, N] = size(imagen);
+    total_pixeles = M * N;
+    
+    % Calcular histograma de TODA la imagen (no por partes)
+    [nk, ~] = imhist(imagen);   
+    
+    % Calcular probabilidades p(r_k) = nk / total_pixeles
+    prk = zeros(256, 1);
+    for i = 1:256
+        prk(i) = nk(i) / total_pixeles;
+    end
+    
+    % Calcular probabilidad acumulada y la transformación s_k = (L-1) * acum
+    L = 256;                     
+    acum = 0;
+    Sk = zeros(256, 1);
+    for i = 1:256
+        acum = acum + prk(i);
+        Sk(i) = (L - 1) * acum;   % valor continuo
+    end
+    
+    % Redondear para obtener los niveles de salida (enteros)
+    T = zeros(256, 1);
+    for i = 1:256
+        T(i) = round(Sk(i));
+    end
+    
+    % Aplicar la transformación a cada píxel de la imagen
+    img_eq = zeros(M, N, 'uint8');
+    for i = 1:M
+        for j = 1:N
+            r = imagen(i, j);               % nivel de gris original (0-255)
+            s = T(r + 1);                    % nivel ecualizado (T tiene índices 1..256)
+            img_eq(i, j) = s;
+        end
+    end
+end
